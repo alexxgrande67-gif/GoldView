@@ -1,0 +1,104 @@
+// Простой Telegram бот для запуска Mini App
+// Запускается на Vercel
+
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const MINI_APP_URL = process.env.MINI_APP_URL;
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(200).json({ status: 'Bot is running' });
+  }
+
+  try {
+    const { message } = req.body;
+    
+    if (!message) {
+      return res.status(200).json({ ok: true });
+    }
+
+    const chatId = message.chat.id;
+    const text = message.text;
+
+    // Обработка команды /start
+    if (text === '/start') {
+      await sendMessage(chatId, 
+        '👋 Привет! Я помогу проанализировать графики криптовалют.\n\n' +
+        '📊 Нажми кнопку ниже, чтобы загрузить график и получить анализ.',
+        {
+          reply_markup: {
+            inline_keyboard: [[
+              {
+                text: '📈 Анализировать график',
+                web_app: { url: MINI_APP_URL }
+              }
+            ]]
+          }
+        }
+      );
+    }
+    
+    // Обработка команды /help
+    else if (text === '/help') {
+      await sendMessage(chatId,
+        '📚 *Как использовать бота:*\n\n' +
+        '1️⃣ Нажми кнопку "Анализировать график"\n' +
+        '2️⃣ Загрузи скриншот графика\n' +
+        '3️⃣ Получи детальный анализ\n\n' +
+        '💡 *Советы:*\n' +
+        '• Используй графики с таймфреймом от 15 минут\n' +
+        '• Убедись, что видны цены и индикаторы\n' +
+        '• Лучше работают чистые графики\n\n' +
+        '⚠️ Помни: это аналитический инструмент, а не финансовый совет!',
+        { parse_mode: 'Markdown' }
+      );
+    }
+    
+    // Обработка фотографий (на случай если пользователь отправит фото напрямую)
+    else if (message.photo) {
+      await sendMessage(chatId,
+        '📸 Чтобы проанализировать график, используй кнопку ниже для загрузки через приложение.',
+        {
+          reply_markup: {
+            inline_keyboard: [[
+              {
+                text: '📈 Открыть анализатор',
+                web_app: { url: MINI_APP_URL }
+              }
+            ]]
+          }
+        }
+      );
+    }
+    
+    // Неизвестная команда
+    else {
+      await sendMessage(chatId,
+        '❓ Неизвестная команда.\n\n' +
+        'Доступные команды:\n' +
+        '/start - Начать работу\n' +
+        '/help - Помощь'
+      );
+    }
+
+    return res.status(200).json({ ok: true });
+    
+  } catch (error) {
+    console.error('Error:', error);
+    return res.status(200).json({ ok: true });
+  }
+}
+
+// Функция отправки сообщения
+async function sendMessage(chatId, text, options = {}) {
+  const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+  
+  await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: text,
+      ...options
+    })
+  });
+}
