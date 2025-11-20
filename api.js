@@ -66,7 +66,7 @@ export default async function handler(req, res) {
 Будь конкретным с ценами. Если цены не видны на графике, укажи это.
 `;
     
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('https://api.openai.com/v1/models \', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
