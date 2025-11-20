@@ -1,20 +1,31 @@
-// API для анализа графиков криптовалют через OpenAI (мультимодальная модель)
+// API для анализа графиков криптовалют через OpenAI ChatGPT
+// Работает на Vercel/Netlify Functions
+
 export default async function handler(req, res) {
   // Разрешаем CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
 
   try {
     const { image } = req.body;
 
-    if (!image) return res.status(400).json({ error: 'Image is required' });
+    if (!image) {
+      return res.status(400).json({ error: 'Image is required' });
+    }
 
     const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-    if (!OPENAI_API_KEY) return res.status(500).json({ error: 'API key not configured' });
+    if (!OPENAI_API_KEY) {
+      return res.status(500).json({ error: 'API key not configured' });
+    }
 
     const analysisPrompt = `
 Проанализируй этот график криптовалюты как профессиональный трейдер.
@@ -60,19 +71,11 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini', // Мультимодальная модель
+        model: 'gpt-4o-mini', // Можно заменить на gpt-4o или gpt-4
         messages: [
           {
             role: 'user',
-            content: analysisPrompt,
-            // Передаем изображение через input_image
-            input_image: [
-              {
-                type: 'base64',
-                data: image,
-                mime_type: 'image/jpeg' // или image/png
-              }
-            ]
+            content: `Вот график в Base64: ${image}\n\n${analysisPrompt}`
           }
         ],
         max_tokens: 2000
@@ -119,3 +122,4 @@ export default async function handler(req, res) {
     });
   }
 }
+
