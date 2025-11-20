@@ -1,88 +1,168 @@
-// API для анализа графиков через Google Gemini
-// Файл: api/analyze.js
-
-export default async function handler(req, res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  
-  if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  
-  try {
-    const { image } = req.body;
-    if (!image) return res.status(400).json({ error: 'Image required' });
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Анализ Графиков</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--tg-theme-bg-color, #fff);
+            color: var(--tg-theme-text-color, #000);
+            padding: 15px;
+        }
+        h1 { font-size: 22px; margin-bottom: 5px; }
+        .subtitle { color: #999; margin-bottom: 20px; font-size: 13px; }
+        .upload-area {
+            border: 2px dashed #3390ec;
+            border-radius: 10px;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+        }
+        .upload-icon { font-size: 40px; margin-bottom: 10px; }
+        input[type="file"] { display: none; }
+        .preview { margin-top: 15px; display: none; }
+        .preview img { width: 100%; border-radius: 10px; margin-bottom: 10px; }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            background: #3390ec;
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            cursor: pointer;
+        }
+        .btn:disabled { opacity: 0.5; }
+        .loading { text-align: center; padding: 30px; display: none; }
+        .spinner {
+            border: 3px solid rgba(0,0,0,0.1);
+            border-top-color: #3390ec;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .results {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 10px;
+            display: none;
+            white-space: pre-wrap;
+            line-height: 1.6;
+        }
+    </style>
+</head>
+<body>
+    <h1>📊 Анализ Графиков</h1>
+    <p class="subtitle">Загрузите график для анализа</p>
     
-    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-    if (!GEMINI_API_KEY) return res.status(500).json({ error: 'API key not set' });
+    <div class="upload-area" id="upload">
+        <div class="upload-icon">📸</div>
+        <p><b>Нажмите для загрузки</b></p>
+        <input type="file" id="file" accept="image/*">
+    </div>
     
-    // Вызов Gemini API
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            parts: [
-              {
-                text: `Проанализируй этот график криптовалюты как профессиональный трейдер.
-
-Предоставь анализ в следующем формате:
-
-📈 ТРЕНД
-[Восходящий/Нисходящий/Боковой и почему]
-
-💰 ЦЕНА
-[Текущая цена или диапазон если виден]
-
-🎯 ТОЧКИ ВХОДА
-Long (покупка): [цена и условия]
-Short (продажа): [цена и условия]
-
-🛡️ STOP LOSS
-Long SL: [уровень]
-Short SL: [уровень]
-
-🎁 TAKE PROFIT
-TP1: [цена]
-TP2: [цена]
-TP3: [цена]
-
-📊 УРОВНИ
-Поддержка: [уровни]
-Сопротивление: [уровни]
-
-⚠️ РИСКИ
-[Описание рисков]
-
-Будь конкретным. Если цены не видны, укажи это.`
-              },
-              {
-                inline_data: {
-                  mime_type: 'image/jpeg',
-                  data: image
-                }
-              }
-            ]
-          }]
-        })
-      }
-    );
+    <div class="preview" id="preview">
+        <img id="img" alt="Preview">
+        <button class="btn" id="analyze">🔍 Анализировать</button>
+    </div>
     
-    if (!response.ok) {
-      const error = await response.text();
-      console.error('Gemini error:', error);
-      return res.status(500).json({ error: 'Analysis failed' });
-    }
+    <div class="loading" id="loading">
+        <div class="spinner"></div>
+        <p>Анализирую график...</p>
+    </div>
     
-    const data = await response.json();
-    const analysis = data.candidates[0].content.parts[0].text;
-    
-    return res.status(200).json({ analysis });
-    
-  } catch (error) {
-    console.error('Error:', error);
-    return res.status(500).json({ error: error.message });
-  }
-}
+    <div class="results" id="results"></div>
+
+    <script>
+        let tg = window.Telegram.WebApp;
+        tg.expand();
+        
+        const upload = document.getElementById('upload');
+        const file = document.getElementById('file');
+        const preview = document.getElementById('preview');
+        const img = document.getElementById('img');
+        const analyze = document.getElementById('analyze');
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+        
+        let selectedFile = null;
+        
+        upload.onclick = () => file.click();
+        
+        file.onchange = (e) => {
+            const f = e.target.files[0];
+            if (!f || !f.type.startsWith('image/')) {
+                tg.showAlert('Выберите изображение');
+                return;
+            }
+            selectedFile = f;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                img.src = e.target.result;
+                preview.style.display = 'block';
+                upload.style.display = 'none';
+                results.style.display = 'none';
+            };
+            reader.readAsDataURL(f);
+        };
+        
+        analyze.onclick = async () => {
+            if (!selectedFile) return;
+            
+            analyze.disabled = true;
+            loading.style.display = 'block';
+            results.style.display = 'none';
+            
+            try {
+                const base64 = await fileToBase64(selectedFile);
+                const analysis = await analyzeChart(base64);
+                
+                loading.style.display = 'none';
+                results.style.display = 'block';
+                results.textContent = analysis;
+                
+                tg.showAlert('✅ Анализ готов!');
+            } catch (error) {
+                loading.style.display = 'none';
+                tg.showAlert('❌ Ошибка: ' + error.message);
+            } finally {
+                analyze.disabled = false;
+            }
+        };
+        
+        function fileToBase64(file) {
+            return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result.split(',')[1]);
+                reader.readAsDataURL(file);
+            });
+        }
+        
+        async function analyzeChart(base64) {
+            // ЗАМЕНИТЕ на ваш URL от Vercel
+            const API_URL = 'https://your-project.vercel.app/api/analyze';
+            
+            const res = await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: base64 })
+            });
+            
+            if (!res.ok) throw new Error('Ошибка анализа');
+            
+            const data = await res.json();
+            return data.analysis;
+        }
+        
+        tg.ready();
+    </script>
+</body>
+</html>
