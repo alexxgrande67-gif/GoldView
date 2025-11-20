@@ -1,34 +1,21 @@
-// API для анализа графиков криптовалют
-// Работает на Vercel/Netlify Functions
-
+// API для анализа графиков криптовалют через OpenAI (мультимодальная модель)
 export default async function handler(req, res) {
   // Разрешаем CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-  
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-  
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
   try {
     const { image } = req.body;
-    
-    if (!image) {
-      return res.status(400).json({ error: 'Image is required' });
-    }
-    
-    // Вызов Claude API для анализа
-    const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-    
-    if (!ANTHROPIC_API_KEY) {
-      return res.status(500).json({ error: 'API key not configured' });
-    }
-    
+
+    if (!image) return res.status(400).json({ error: 'Image is required' });
+
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    if (!OPENAI_API_KEY) return res.status(500).json({ error: 'API key not configured' });
+
     const analysisPrompt = `
 Проанализируй этот график криптовалюты как профессиональный трейдер.
 
@@ -63,54 +50,47 @@ export default async function handler(req, res) {
   "confidence": "high/medium/low"
 }
 
-Будь конкретным с ценами. Если цены не видны на графике, укажи это.
+Если цены не видны на графике, укажи это.
 `;
-    
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
+        model: 'gpt-4o-mini', // Мультимодальная модель
         messages: [
           {
             role: 'user',
-            content: [
+            content: analysisPrompt,
+            // Передаем изображение через input_image
+            input_image: [
               {
-                type: 'image',
-                source: {
-                  type: 'base64',
-                  media_type: 'image/jpeg',
-                  data: image
-                }
-              },
-              {
-                type: 'text',
-                text: analysisPrompt
+                type: 'base64',
+                data: image,
+                mime_type: 'image/jpeg' // или image/png
               }
             ]
           }
-        ]
+        ],
+        max_tokens: 2000
       })
     });
-    
+
     if (!response.ok) {
       const error = await response.text();
-      console.error('Claude API error:', error);
+      console.error('OpenAI API error:', error);
       return res.status(500).json({ error: 'Analysis failed' });
     }
-    
+
     const data = await response.json();
-    const analysisText = data.content[0].text;
-    
-    // Извлекаем JSON из ответа
+    const analysisText = data.choices[0].message.content;
+
+    // Пытаемся распарсить JSON из текста
     let analysis;
     try {
-      // Убираем возможные markdown блоки
       const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         analysis = JSON.parse(jsonMatch[0]);
@@ -119,7 +99,6 @@ export default async function handler(req, res) {
       }
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
-      // Возвращаем текстовый ответ если не удалось распарсить JSON
       return res.status(200).json({
         trend: 'unknown',
         trendDescription: analysisText,
@@ -129,14 +108,14 @@ export default async function handler(req, res) {
         risks: 'Не удалось полностью проанализировать график'
       });
     }
-    
+
     return res.status(200).json(analysis);
-    
+
   } catch (error) {
     console.error('Error:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       error: 'Internal server error',
-      message: error.message 
+      message: error.message
     });
   }
 }
